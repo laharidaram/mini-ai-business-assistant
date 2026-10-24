@@ -9,7 +9,7 @@ AI assistance supported parts of the development process, but the central engine
 ## 2. AI Tools and Development Tools Used
 
 - **ChatGPT:** Used to help interpret the requirements, explore implementation approaches, review code and edge cases, troubleshoot errors, and draft project documentation.
-- **Claude :** Include this only if you personally used the relevant tool during development, and briefly explain how.
+- **Claude :** Used this for coding purpose.
 - **Anthropic Claude API (application integration):** The application has an optional integration intended to interpret natural-language questions when an Anthropic API key is configured. This is separate from using Claude as a development assistant. Describe live API use as tested only if you actually tested it with a valid key.
 - **Python and pytest:** Used to implement the application and run automated tests.
 - **Browser and terminal:** Used to run the application, inspect responses, and debug issues.
