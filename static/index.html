@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sales Q&amp;A</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;600&family=Source+Serif+4:opsz,wght@8..60,500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#EDF0F3;--card:#fff;--ink:#17212B;--mute:#5B6773;--line:#D3D9DF;--accent:#0F6B5C;--warn:#7A4E00;--warnbg:#FFF1CC;--err:#9B2226;--errbg:#FCE8E6}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "Public Sans",system-ui,sans-serif}
+main{max-width:920px;margin:0 auto;padding:36px 20px 64px}
+h1{font:500 30px/1.2 "Source Serif 4",Georgia,serif;margin:0 0 4px}
+h1 .badge{font:400 13px "Public Sans",sans-serif;vertical-align:middle;margin-left:10px}
+.sub{color:var(--mute);margin:0 0 28px}
+form{display:flex;gap:8px}
+input{flex:1;min-width:0;padding:14px 16px;font:inherit;border:1px solid var(--line);border-radius:9px;background:var(--card);box-shadow:0 1px 2px #17212b08} input:focus{border-color:var(--accent)}
+button{font:inherit;font-weight:600;border:0;border-radius:9px;padding:0 22px;background:var(--accent);color:#fff;cursor:pointer;transition:background .15s,transform .15s} button:hover{background:#0b584c} button:active{transform:translateY(1px)}
+button:disabled{opacity:.5;cursor:wait}
+:focus-visible{outline:3px solid #6FB7A8;outline-offset:2px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 28px}
+.chip{background:none;color:var(--accent);border:1px solid var(--accent);padding:5px 12px;font-weight:400;font-size:14px;border-radius:99px}
+.chip:hover{background:var(--accent);color:#fff}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:24px;margin-bottom:16px;box-shadow:0 3px 12px #17212b08}
+.answer{font:500 24px/1.4 "Source Serif 4",Georgia,serif;margin:0 0 14px;letter-spacing:-.2px}
+.meta{display:flex;flex-wrap:wrap;gap:8px;font-size:13px;color:var(--mute)}
+.badge{padding:2px 10px;border-radius:99px;background:#E3EFEC;color:var(--accent)}
+.badge.warn{background:var(--warnbg);color:var(--warn)}
+.err{background:var(--errbg);color:var(--err);border-color:#E9B8B3}
+.err p{margin:0 0 10px;font-weight:600}
+.note{font-size:14px;color:var(--mute);margin:10px 0 0}
+.note.warn{color:var(--warn)}
+.scroll{overflow-x:auto;margin-top:16px}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:7px 12px;border-bottom:1px solid var(--line);text-align:right;font-variant-numeric:tabular-nums}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--mute);font-weight:600}
+.chart{position:relative;height:260px;margin-top:20px}
+details{margin-top:14px;font-size:14px} details.card{margin-top:18px} summary{padding:2px 0} .chips{gap:7px} .chip{border-radius:999px} .sub{margin-bottom:22px}
+@media(max-width:600px){main{padding:24px 14px 40px}h1{font-size:27px}form{gap:6px}input{padding:12px 10px}form button{padding:0 16px}.card{padding:17px}.answer{font-size:21px}.chips{margin-bottom:20px}}
+summary{cursor:pointer;color:var(--mute)}
+pre{background:#F4F6F8;padding:12px;border-radius:6px;overflow-x:auto;white-space:pre-wrap;margin:8px 0 0}
+</style>
+</head>
+<body>
+<main>
+  <h1>Sales Q&amp;A</h1>
+  <p class="sub">Ask about the sales data in plain English. Every figure comes from a database query.</p>
+  <form id="form">
+    <input id="q" maxlength="300" placeholder="e.g. Which product generated the highest revenue?" autocomplete="off" aria-label="Your question" autofocus>
+    <button id="go">Ask</button>
+  </form>
+  <div class="chips" id="chips"></div>
+  <div id="out" aria-live="polite"></div>
+  <details class="card" id="dq"><summary>Data quality</summary><div id="dqbody"></div></details>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const EXAMPLES = ["What is the total revenue?", "Which product generated the highest revenue?",
+  "Which region generated the highest sales?", "What is the monthly revenue trend?",
+  "How did revenue change between January and February?", "Which product generated the lowest revenue?",
+  "Which region is second-highest by revenue?", "How many orders are there?",
+  "Which transactions have a missing unit price?", "How much revenue did returned orders lose?"];
+const MONEY = new Set(["revenue", "change_vs_first", "unit_price", "sales_value", "discount_amount"]);
+const visible = p => Object.fromEntries(Object.entries(p).filter(([k]) => k !== "comparison_wording"));
+let chart;
+
+function el(tag, text, cls, parent) {
+  const e = document.createElement(tag);
+  if (text !== undefined) e.textContent = text;
+  if (cls) e.className = cls;
+  if (parent) parent.append(e);
+  return e;
+}
+const fmt = (col, v) => v === null ? "–" : typeof v !== "number" ? v :
+  (MONEY.has(col) ? "₹" : "") + v.toLocaleString("en-IN", {maximumFractionDigits: 2}) + (col.endsWith("pct") ? "%" : "");
+
+function table(cols, rows, parent) {
+  const wrap = el("div", undefined, "scroll", parent), t = el("table", undefined, "", wrap);
+  const head = el("tr", undefined, "", el("thead", undefined, "", t));
+  cols.forEach(c => el("th", c.replaceAll("_", " "), "", head));
+  const body = el("tbody", undefined, "", t);
+  rows.forEach(r => { const tr = el("tr", undefined, "", body); r.forEach((v, i) => el("td", fmt(cols[i], v), "", tr)); });
+}
+
+function show(d, ok) {
+  const out = $("out"); out.replaceChildren();
+  if (chart) { chart.destroy(); chart = null; }
+  const card = el("div", undefined, "card" + (ok ? "" : " err"), out);
+  if (!ok) {
+    el("p", d.message || "Something went wrong.", "", card);
+    if (d.supported_questions) {
+      el("div", "Try one of these:", "note", card);
+      const box = el("div", undefined, "chips", card);
+      d.supported_questions.forEach(s => el("button", s, "chip", box).onclick = () => run(s));
+    }
+    return;
+  }
+  el("p", d.answer, "answer", card);
+  const meta = el("div", undefined, "meta", card);
+  const shown = visible(d.params);
+  el("span", "Interpreted as " + d.intent + (Object.keys(shown).length ? " " + JSON.stringify(shown) : ""), "", meta);
+  if (d.interpreted_by === "llm") el("span", "AI-assisted interpretation", "badge", meta);
+  table(d.columns, d.rows, card);
+  if (d.chart && window.Chart) {
+    const box = el("div", undefined, "chart", card), cv = el("canvas", undefined, "", box);
+    chart = new Chart(cv, {type: d.chart.type, data: {labels: d.chart.labels, datasets: [{label: d.chart.label,
+      data: d.chart.values, backgroundColor: "#0F6B5C", borderColor: "#0F6B5C", tension: .25}]},
+      options: {maintainAspectRatio: false, plugins: {legend: {display: false}}, scales: {y: {beginAtZero: true}}}});
+  }
+  d.notes.forEach((n, i) => el("p", n, "note" + (i < d.notes.length - 1 ? " warn" : ""), card));
+  const det = el("details", undefined, "", card);
+  el("summary", "SQL used", "", det);
+  el("pre", d.sql + "\n-- parameters: " + JSON.stringify(shown), "", det);
+}
+
+async function run(q) {
+  q = q.trim();
+  if (!q) return show({message: "Please type a question."}, false);
+  $("q").value = q; $("go").disabled = true;
+  try {
+    const res = await fetch("/ask", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({question: q})});
+    show(await res.json().catch(() => ({message: "Unexpected server response."})), res.ok);
+  } catch { show({message: "Could not reach the server."}, false); }
+  $("go").disabled = false;
+}
+
+$("form").onsubmit = e => { e.preventDefault(); run($("q").value); };
+EXAMPLES.forEach(s => el("button", s, "chip", $("chips")).onclick = () => run(s));
+
+fetch("/api/data-quality").then(r => r.json()).then(d => {
+  const rs = d.revenue_status, ret = d.by_status.Returned || 0;
+  $("dq").querySelector("summary").textContent = "Data quality: " + d.loaded + " rows loaded, " + d.rejected.length +
+    " rejected; " + (rs.zero_quantity || 0) + " zero quantity, " + (rs.unknown_price || 0) + " missing unit price, " +
+    ret + " returned";
+  const b = $("dqbody");
+  el("p", "Every readable row is kept. A zero-quantity row counts as \u20B90 revenue; a row with no valid unit price has " +
+    "unknown revenue and is left out of revenue totals (never guessed). Returned orders are loaded but not counted as revenue.", "note", b);
+  if (d.flagged.length) table(Object.keys(d.flagged[0]), d.flagged.map(r => Object.values(r)), b);
+  if (d.rejected.length) table(["line", "transaction_id", "reason"], d.rejected.map(r => [r.line, r.transaction_id, r.reason]), b);
+}).catch(() => {});
+</script>
+</body>
+</html>
